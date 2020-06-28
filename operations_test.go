@@ -348,6 +348,54 @@ func TestGt(t *testing.T) {
 
 }
 
+func TestMisha(t *testing.T) {
+	defer runtime.GC()
+	assert := assert.New(t)
+	g := NewGraph()
+	var err error
+	var x0, x1, x2, f0, f1, f2 *Node
+	var grad0, grad1, grad2 Nodes
+
+	x0 = NewScalar(g, Float64, WithName("x0"))
+	x1 = NewScalar(g, Float64, WithName("x1"))
+	x2 = NewScalar(g, Float64, WithName("x2"))
+
+	Let(x0, -2.5)
+	Let(x1, -2.2)
+	Let(x2, 1.0)
+
+	f0 = Must(Mish(x0))
+	f1 = Must(Mish(x1))
+	f2 = Must(Mish(x2))
+
+	if grad0, err = Grad(f0, x0); err != nil {
+		t.Error(err)
+	}
+	if grad1, err = Grad(f1, x1); err != nil {
+		t.Error(err)
+	}
+	if grad2, err = Grad(f2, x2); err != nil {
+		t.Error(err)
+	}
+
+	machine := NewTapeMachine(g)
+	defer machine.Close()
+	if err = machine.RunAll(); err != nil {
+		t.Error(err)
+	}
+
+	// assert non-monotonicity of Mish
+	// x0 < x1 < x2 && f0 > f1 < f2
+	assert.Less(extractF64(x0.Value()), extractF64(x1.Value()))
+	assert.Less(extractF64(x1.Value()), extractF64(x2.Value()))
+	assert.Greater(extractF64(f0.Value()), extractF64(f1.Value()))
+	assert.Less(extractF64(f1.Value()), extractF64(f2.Value()))
+
+	// assert non-monotonocity of Mish'
+	assert.Greater(extractF64(grad0[0].Value()), extractF64(grad1[0].Value()))
+	assert.Less(extractF64(grad1[0].Value()), extractF64(grad2[0].Value()))
+}
+
 func TestSoftMax(t *testing.T) {
 	defer runtime.GC()
 	assert := assert.New(t)
@@ -418,11 +466,11 @@ var sliceTests = []struct {
 	{"vec[0]", tensor.Shape{2}, []tensor.Slice{S(0)}, scalarShape, float64(0), false},
 	{"vec[0:2]", tensor.Shape{2}, []tensor.Slice{S(0, 2)}, tensor.Shape{2}, []float64{0, 1}, false},
 	{"Mat[0]", tensor.Shape{2, 3}, []tensor.Slice{S(0)}, tensor.Shape{3}, []float64{0, 1, 2}, false},
-	{"Mat[:, 0]", tensor.Shape{2, 3}, []tensor.Slice{nil, S(0)}, tensor.Shape{2}, []float64{0, 1, 2, 3}, false},
+	{"Mat[:, 0]", tensor.Shape{2, 3}, []tensor.Slice{nil, S(0)}, tensor.Shape{2}, []float64{0, 3}, false},
 	{"3Tensor[0]", tensor.Shape{2, 3, 4}, []tensor.Slice{S(0)}, tensor.Shape{3, 4}, tensor.Range(tensor.Float64, 0, 12), false},
 	{"3Tensor[0:2]", tensor.Shape{2, 3, 4}, []tensor.Slice{S(0, 2)}, tensor.Shape{2, 3, 4}, tensor.Range(tensor.Float64, 0, 24), false},
-	{"3Tensor[:, 0]", tensor.Shape{2, 3, 4}, []tensor.Slice{nil, S(0)}, tensor.Shape{2, 4}, tensor.Range(tensor.Float64, 0, 16), false},
-	{"3Tensor[0, :, 0]", tensor.Shape{2, 3, 4}, []tensor.Slice{S(0), nil, S(0)}, tensor.Shape{3}, tensor.Range(tensor.Float64, 0, 9), false},
+	{"3Tensor[:, 0]", tensor.Shape{2, 3, 4}, []tensor.Slice{nil, S(0)}, tensor.Shape{2, 4}, []float64{0, 1, 2, 3, 12, 13, 14, 15}, false},
+	{"3Tensor[0, :, 0]", tensor.Shape{2, 3, 4}, []tensor.Slice{S(0), nil, S(0)}, tensor.Shape{3}, []float64{0, 4, 8}, false},
 
 	{"vec[:, 0]", tensor.Shape{2}, []tensor.Slice{nil, S(0)}, nil, nil, true},
 }

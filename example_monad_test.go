@@ -7,7 +7,7 @@ import (
 )
 
 // This example showcases the reasons for the more confusing functions.
-func Example_raison_detre() {
+func Example_monad_raison_detre() {
 	// The main reason for the following function is to make it easier to create APIs.
 	// Gorgonia;s APIs are very explicit hence not very user friendly.
 
@@ -56,22 +56,22 @@ func Example_raison_detre() {
 
 	// Then we write the expression
 	act2 := tanh(add(mul(x2, w2), b2, nil, []byte{0}))
-	fmt.Printf("act2 is a %T (note it's wrapped in the `Result` tyoe)\n", act2)
+	fmt.Printf("act2 is a %T (note it's wrapped in the `Result` type)\n", act2)
 	fmt.Println()
 	// both g and h are the same graph but the expression is easier to write for act2
 	fmt.Printf("Both g and h are the same graph:\ng: %v\nh: %v\n", g.AllNodes(), h.AllNodes())
 
 	// Output:
 	// act is a *gorgonia.Node
-	// act2 is a *gorgonia.Node (note it's wrapped in the `Result` tyoe)
+	// act2 is a *gorgonia.Node (note it's wrapped in the `Result` type)
 	//
 	// Both g and h are the same graph:
-	// g: [w, b, x, A × B(%2, %0), SizeOf=32(%3), Repeat[0](%1, %4), + false(%3, %5), tanh(%6)]
-	// h: [w, b, x, A × B(%2, %0), SizeOf=32(%3), Repeat[0](%1, %4), + false(%3, %5), tanh(%6)]
+	// g: [w, b, x, A × B(%2, %0), Reshape(1, 100)(%1), SizeOf=32(%3), Repeat0(%4, %5), + false(%3, %6), tanh(%7)]
+	// h: [w, b, x, A × B(%2, %0), Reshape(1, 100)(%1), SizeOf=32(%3), Repeat0(%4, %5), + false(%3, %6), tanh(%7)]
 }
 
 // This example showcases dealing with errors. This is part 2 of the raison d'être of the more complicated functions - dealing with errors
-func Example_raison_detre_errors() {
+func Example_monad_raison_detre_errors() {
 	// Observe that in a similar example, errors are manually controllable in the original case,
 	// but automated in the second case
 	const (

@@ -20,7 +20,7 @@ import (
 
 func reductionType(d int, along []int) hm.Type {
 	a := hm.TypeVariable('a')
-	t := makeTensorType(d, a)
+	t := makeTensorType(d-len(along), a)
 
 	axes := make(map[int]bool)
 	for _, axis := range along {
@@ -52,24 +52,19 @@ func reductionInferShape(along []int, in tensor.Shape) (tensor.Shape, error) {
 		if d >= shape.Dims() {
 			return nil, fmt.Errorf("shape error, along %d is not a valid axis for shape %v", d, in)
 		}
-		shape[d] = 1
+		shape[d] = 0
 	}
-	// special cases: if all dimensions are 1 -> ScalarShape, if exactly one dimension is != 1 -> vector
-	vecD := 0
-	numNot1 := 0
+
+	var dims []int
 	for _, d := range shape {
-		if d != 1 {
-			vecD = d
-			numNot1++
-			if numNot1 > 1 {
-				return shape, nil
-			}
+		if d != 0 {
+			dims = append(dims, d)
 		}
 	}
-	if numNot1 == 0 {
+	if len(dims) == 0 {
 		return tensor.ScalarShape(), nil
 	}
-	return tensor.Shape{vecD}, nil
+	return tensor.Shape(dims), nil
 }
 
 func reductionDo(op Op, s string, f func(*tensor.Dense, ...int) (*tensor.Dense, error), along []int, inputs ...Value) (retVal Value, err error) {
@@ -152,7 +147,7 @@ func (op maxOp) SymDiff(inputs Nodes, output, gradNode *Node) (retVal Nodes, err
 	if a, b, err = Broadcast(output, t, bcpat); err != nil {
 		return nil, errors.Wrap(err, operationError)
 	}
-	if eq, err = Eq(a, b, false); err != nil {
+	if eq, err = Eq(a, b, true); err != nil {
 		return nil, errors.Wrap(err, operationError)
 	}
 
@@ -160,7 +155,7 @@ func (op maxOp) SymDiff(inputs Nodes, output, gradNode *Node) (retVal Nodes, err
 		return nil, errors.Wrap(err, operationError)
 	}
 	retVal = make(Nodes, 1)
-	if retVal[0], err = Mul(a2, b2); err != nil {
+	if retVal[0], err = HadamardProd(a2, b2); err != nil {
 		return nil, errors.Wrap(err, operationError)
 	}
 	return
@@ -233,8 +228,14 @@ func (op sumOp) SymDiff(inputs Nodes, output, gradNode *Node) (retVal Nodes, err
 		return
 	}
 
+	newShape := calcBroadcastShape(gradNode, op.d, op.along)
+	if gradNode, err = Reshape(gradNode, newShape); err != nil {
+		return nil, errors.Wrapf(err, "Unable to reshape grad node to %v", newShape)
+	}
+
 	children := make(Nodes, len(op.along)+1)
 	children[0] = gradNode
+
 	for i, a := range op.along {
 		var n *Node
 		if n, err = SizeOf(a, inputs[0]); err != nil {
@@ -245,13 +246,7 @@ func (op sumOp) SymDiff(inputs Nodes, output, gradNode *Node) (retVal Nodes, err
 	}
 
 	retVal = make(Nodes, 1)
-	repeat := newRepeatOp(op.along, children)
-
-	symdiffLogf("repeat: %v", repeat.Type())
-	symdiffLogf("children %#Y", children)
-	symdiffLogf("children: %v", children)
-
-	if retVal[0], err = ApplyOp(repeat, children...); err != nil {
+	if retVal[0], err = repeatedApply(op.along, children); err != nil {
 		return nil, errors.Wrap(err, applyOpFail)
 	}
 	retVal[0].setGroup(gradClust)

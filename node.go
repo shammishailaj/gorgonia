@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"hash"
 	"hash/fnv"
-	"log"
 
 	"github.com/awalterschulze/gographviz"
 	"github.com/chewxy/hm"
@@ -198,10 +197,11 @@ func WithShape(shp ...int) NodeConsOpt {
 	s := tensor.Shape(tensor.BorrowInts(len(shp)))
 	copy(s, shp)
 	f := func(n *Node) {
+		if n.t == nil && n.shape == nil {
+			n.shape = s
+			return
+		}
 		nd := n.Dims()
-		// if nd == 1 && s.IsVector() {
-		// 	goto safe
-		// }
 		isVec := s.IsColVec() || s.IsRowVec()
 		acceptVec := (isVec && (nd == 1))
 		sameDims := nd == s.Dims()
@@ -210,7 +210,6 @@ func WithShape(shp ...int) NodeConsOpt {
 		if !acceptVec && !sameDims && !acceptScalar {
 			panic(fmt.Sprintf("Node %v, has %d dimensions(Shape: %v). Input shape is %v, which has %d dimensions", n, n.Dims(), n.shape, s, s.Dims()))
 		}
-		// safe:
 		n.shape = s
 	}
 	return f
@@ -230,7 +229,7 @@ func WithGroupName(name string) NodeConsOpt {
 // withGroup is a node construction option to group a *Node within a particular group. This option is useful for debugging with graphs.
 func withGroup(group encoding.Group) NodeConsOpt {
 	f := func(n *Node) {
-		n.groups.Upsert(group)
+		n.groups = n.groups.Upsert(group)
 	}
 	return f
 }
@@ -246,11 +245,11 @@ func (n *Node) Groups() encoding.Groups {
 
 	switch {
 	case isConst:
-		n.groups.Upsert(encoding.ConstantCluster)
+		n.groups = n.groups.Upsert(encoding.ConstantCluster)
 	case isInput:
-		n.groups.Upsert(encoding.InputCluster)
+		n.groups = n.groups.Upsert(encoding.InputCluster)
 	default:
-		n.groups.Upsert(encoding.ExprGraphCluster)
+		n.groups = n.groups.Upsert(encoding.ExprGraphCluster)
 	}
 	return n.groups
 }
@@ -259,6 +258,8 @@ func newNode(opts ...NodeConsOpt) *Node {
 	n := borrowNode()
 	n.dataOn = CPU
 	n.id = -1
+	n.t = nil
+	n.shape = nil
 
 	for _, opt := range opts {
 		opt(n)
@@ -298,6 +299,10 @@ func (n *Node) Nodes() Nodes { return Nodes{n} }
 func (n *Node) Err() error { return nil }
 
 func (n *Node) DataSize() int { return n.Shape().TotalSize() }
+
+func (n *Node) DerivOf() Nodes { return n.derivOf }
+
+func (n *Node) Deriv() *Node { return n.deriv }
 
 // helper functions to help compilation process
 func (n *Node) isArg() bool      { return n.op == nil }
@@ -391,7 +396,6 @@ func (n *Node) Clone() (retVal interface{}) {
 	if n.boundTo != nil {
 		var err error
 		if n2.boundTo, err = CloneValue(n.boundTo); err != nil {
-			log.Printf("Unable to clone %v\n%T\n%v", n, n.boundTo, n.boundTo)
 			panic(err)
 		}
 	}
@@ -475,7 +479,7 @@ func (n *Node) Strides() []int {
 		case tensor.Tensor:
 			return v.Strides()
 		default:
-			log.Printf("Unhandled type for Strides(): %T. Using fallback method and assuming dense tensor types", n.boundTo)
+			panic(fmt.Sprintf("Unhandled type for Strides(): %T. Using fallback method and assuming dense tensor types", n.boundTo))
 		}
 	}
 	return n.shape.CalcStrides()
@@ -631,9 +635,6 @@ func (n *Node) String() string {
 
 // TODO: check type, check shape, check if needsGrad -> promote to dualValue
 func (n *Node) bind(v Value) error {
-	// pc, _, _, _ := runtime.Caller(1)
-	// log.Printf("binding to %p. Called by %v", n, runtime.FuncForPC(pc).Name())
-
 	if n.boundTo == nil {
 		n.boundTo = v
 		return nil
@@ -651,7 +652,6 @@ func (n *Node) bind(v Value) error {
 			}
 			// n.boundTo = vdv
 			// return nil
-			log.Printf("n %p", n)
 			panic("Undefined behaviour") // no seriously there literally is no defined behaviour of what should the right thing be. I'll come back to this TODO.
 		}
 		dv.Value = v
